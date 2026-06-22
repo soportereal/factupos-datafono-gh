@@ -1,0 +1,32 @@
+{
+  "name": "factupos-datafono",
+  "version": "0.2.0",
+  "description": "Puente local entre FactuPOS web y datáfono Promerica WPOSS (NEW9220/NEW9310)",
+  "main": "src/index.js",
+  "bin": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node src/index.js",
+    "test:echo": "node tests/echoServer.js",
+    "test:cliente": "node tests/test-wpossClient.js",
+    "build:win": "pkg . --targets node18-win-x64 --output dist/FactuposDatafono.exe",
+    "build:linux": "pkg . --targets node18-linux-x64 --output dist/factupos-datafono"
+  },
+  "pkg": {
+    "assets": [
+      "config/*.default.json",
+      "node_modules/systray/traybin/**/*"
+    ],
+    "outputPath": "dist"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "systray": "^1.0.5"
+  },
+  "devDependencies": {
+    "pkg": "^5.8.1"
+  },
+  "author": "FactuPOS Dev <dev@factupos.com>",
+  "license": "UNLICENSED"
+}

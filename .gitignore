@@ -1,0 +1,12 @@
+# Dependencias
+node_modules/
+
+# Salida de build
+dist/FactuposDatafono.exe
+dist/factupos-datafono
+installer/Output/
+
+# Logs y config local
+logs/
+*.log
+config.json
