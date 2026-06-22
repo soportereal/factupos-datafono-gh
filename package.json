@@ -1,6 +1,6 @@
 {
   "name": "factupos-datafono",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Puente local entre FactuPOS web y datáfono Promerica WPOSS (NEW9220/NEW9310)",
   "main": "src/index.js",
   "bin": "src/index.js",

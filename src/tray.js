@@ -91,11 +91,12 @@ function iniciarTray({ logger, cfgMod, rutaConfigDir, rutaLogs, onSalir, onReini
     PROBAR_POS: 3,
     SEP2: 4,
     ABRIR_CONFIG: 5,
-    ABRIR_LOGS: 6,
-    ABRIR_CFG_DIR: 7,
-    SEP3: 8,
-    REINICIAR: 9,
-    SALIR: 10,
+    LOG_VIVO: 6,
+    ABRIR_LOGS: 7,
+    ABRIR_CFG_DIR: 8,
+    SEP3: 9,
+    REINICIAR: 10,
+    SALIR: 11,
   };
 
   const tray = new SysTray({
@@ -110,7 +111,8 @@ function iniciarTray({ logger, cfgMod, rutaConfigDir, rutaLogs, onSalir, onReini
         { title: 'Probar conexión POS',  tooltip: 'TCP al datáfono configurado', checked: false, enabled: true },
         { title: '---',     tooltip: '', checked: false, enabled: false },
         { title: 'Abrir configuración…', tooltip: 'Abre DTF-001 en el navegador', checked: false, enabled: true },
-        { title: 'Ver logs…',            tooltip: 'Abre la carpeta de logs', checked: false, enabled: true },
+        { title: 'Ver log en vivo…',     tooltip: 'Ventana con el log en tiempo real', checked: false, enabled: true },
+        { title: 'Abrir carpeta de logs', tooltip: 'Abre la carpeta de logs', checked: false, enabled: true },
         { title: 'Abrir carpeta config', tooltip: 'AppData/FactuposDatafono', checked: false, enabled: true },
         { title: '---',     tooltip: '', checked: false, enabled: false },
         { title: 'Reiniciar puente',     tooltip: 'Reinicia el servidor HTTP local', checked: false, enabled: true },
@@ -159,6 +161,10 @@ function iniciarTray({ logger, cfgMod, rutaConfigDir, rutaLogs, onSalir, onReini
       }
       case ITEMS.ABRIR_CONFIG: {
         abrirEnNavegador(urlConfigWeb());
+        break;
+      }
+      case ITEMS.LOG_VIVO: {
+        abrirEnNavegador(`${url}/monitor`);
         break;
       }
       case ITEMS.ABRIR_LOGS: {
