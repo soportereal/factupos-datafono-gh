@@ -17,11 +17,12 @@
 ; ============================================================================
 
 #define MyAppName "FactuposDatafono"
-#define MyAppVersion "0.3.0"
+#define MyAppVersion "0.3.1"
 #define MyAppPublisher "Soporte Real SRL"
 #define MyAppURL "https://soportereal.com"
 #define MyAppExeName "FactuposDatafono.exe"
 #define MyAppVbs "FactuposDatafono-silencioso.vbs"
+#define MyAppIcon "datafono.ico"
 
 [Setup]
 AppId={{B7E9F2A4-3C8D-4E1F-9A6B-5D2C8F0E1A37}
@@ -42,7 +43,8 @@ PrivilegesRequired=admin
 ArchitecturesAllowed=x64
 ArchitecturesInstallIn64BitMode=x64
 UninstallDisplayName={#MyAppName}
-UninstallDisplayIcon={app}\{#MyAppExeName}
+UninstallDisplayIcon={app}\{#MyAppIcon}
+SetupIconFile={#MyAppIcon}
 
 [Languages]
 Name: "es"; MessagesFile: "compiler:Languages\Spanish.isl"
@@ -55,10 +57,11 @@ Name: "startmenu"; Description: "Crear acceso directo en el menú Inicio"; Group
 ; El .exe lo genera `npm run build:win` (pkg) ANTES de compilar este instalador.
 Source: "..\dist\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#MyAppVbs}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#MyAppIcon}"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 ; Accesos directos en el menú Inicio (lanzan el .vbs → sin consola, con tray)
-Name: "{group}\{#MyAppName}"; Filename: "wscript.exe"; Parameters: """{app}\{#MyAppVbs}"""; WorkingDir: "{app}"; Tasks: startmenu
+Name: "{group}\{#MyAppName}"; Filename: "wscript.exe"; Parameters: """{app}\{#MyAppVbs}"""; WorkingDir: "{app}"; IconFilename: "{app}\{#MyAppIcon}"; Tasks: startmenu
 Name: "{group}\Desinstalar {#MyAppName}"; Filename: "{uninstallexe}"; Tasks: startmenu
 
 [Registry]
