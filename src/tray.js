@@ -99,9 +99,11 @@ function iniciarTray({ logger, cfgMod, rutaConfigDir, rutaLogs, onSalir, onReini
     CERRAR: 10,
   };
 
-  // Estado del servicio: null = desconocido, true = corriendo, false = detenido.
-  let servicioActivo = null;
-  let textoEstado = '● Iniciando…';
+  // Estado del servicio. Se asume CORRIENDO al inicio (el servidor HTTP arranca
+  // antes que el tray), así el icono se ve VERDE de una y solo pasa a rojo si un
+  // sondeo falla — evita que quede pegado en el icono "iniciando".
+  let servicioActivo = true;
+  let textoEstado = '● Servicio corriendo';
 
   const itemEstado = (texto) => ({ title: texto, tooltip: 'Estado del servicio', checked: false, enabled: false, seq_id: ITEMS.ESTADO });
 
@@ -127,7 +129,7 @@ function iniciarTray({ logger, cfgMod, rutaConfigDir, rutaLogs, onSalir, onReini
   }
 
   const tray = new SysTray({
-    menu: construirMenu(ICON_INACTIVO, textoEstado),
+    menu: construirMenu(ICON_ACTIVO, textoEstado),
     debug: false,
     copyDir: true,  // pkg: extrae el binario a un dir real antes de spawn
   });
@@ -169,7 +171,8 @@ function iniciarTray({ logger, cfgMod, rutaConfigDir, rutaLogs, onSalir, onReini
   // Mandarle un update antes de que esté listo lo hacía crashear a los segundos.
   tray.onReady(() => {
     listo = true;
-    servicioActivo = null;                             // forzar el primer pintado real del color
+    // No forzamos repintado: el icono ya arranca verde. El sondeo solo lo pasa a
+    // rojo si el servicio deja de responder.
     sondear();
     timerSondeo = setInterval(() => { sondear(); }, 5000);
     if (timerSondeo.unref) timerSondeo.unref();

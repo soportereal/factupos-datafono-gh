@@ -9,11 +9,18 @@ const { iniciarTray } = require('./tray');
 let servidorActual = null;
 let trayActual = null;
 
+// Arranca el servidor HTTP. Resuelve con el server al escuchar, o rechaza con el
+// error (p.ej. EADDRINUSE si ya hay otra instancia en el puerto).
 function arrancarServidor(logger) {
   const cfg = cfgMod.cargar();
   const app = crearApp({ logger });
-  return app.listen(cfg.servidor.port, cfg.servidor.host, () => {
-    logger.info(`Escuchando en http://${cfg.servidor.host}:${cfg.servidor.port}`);
+  return new Promise((resolve, reject) => {
+    const server = app.listen(cfg.servidor.port, cfg.servidor.host);
+    server.once('listening', () => {
+      logger.info(`Escuchando en http://${cfg.servidor.host}:${cfg.servidor.port}`);
+      resolve(server);
+    });
+    server.once('error', (err) => reject(err));
   });
 }
 
@@ -23,7 +30,11 @@ async function reiniciarServidor(logger) {
     servidorActual = null;
     logger.info('Servidor cerrado para reinicio');
   }
-  servidorActual = arrancarServidor(logger);
+  try {
+    servidorActual = await arrancarServidor(logger);
+  } catch (err) {
+    logger.error(`No se pudo reiniciar el servidor: ${err && err.message}`);
+  }
 }
 
 function salirApp(logger) {
@@ -33,7 +44,7 @@ function salirApp(logger) {
   setTimeout(() => process.exit(0), 1500).unref();
 }
 
-function main() {
+async function main() {
   const cfg = cfgMod.cargar();
   const logger = loggerMod.crear({ nivel: cfg.logs.nivel });
 
@@ -46,7 +57,19 @@ function main() {
   logger.info(`Bancos: banco-promerica (WPOSS protocolo AES + SHA256 + length prefix)`);
   logger.info('====================================');
 
-  servidorActual = arrancarServidor(logger);
+  // CANDADO DE INSTANCIA ÚNICA: si el puerto ya está en uso, ya hay otra instancia
+  // corriendo → esta copia se cierra limpia (antes quedaba a medias con EADDRINUSE).
+  try {
+    servidorActual = await arrancarServidor(logger);
+  } catch (err) {
+    if (err && err.code === 'EADDRINUSE') {
+      logger.warn(`El puerto ${cfg.servidor.port} ya está en uso: ya hay otra instancia de FactuposDatafono corriendo. Esta copia se cierra.`);
+    } else {
+      logger.error(`No se pudo iniciar el servidor: ${err && err.message}`);
+    }
+    process.exit(0);
+    return;
+  }
   logger.info(`Ping: curl http://${cfg.servidor.host}:${cfg.servidor.port}/salud`);
 
   // Tray icon (solo Windows; en otros SO sigue en consola)
