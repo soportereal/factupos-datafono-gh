@@ -96,9 +96,20 @@ function crearApp({ logger }) {
 
   const cfgInicial = cfgMod.cargar();
   const corsOrigins = cfgInicial.servidor.corsOrigins || ['*'];
+
+  // Private Network Access (Chrome/Edge 104+): una página servida por HTTPS pública
+  // (DTF-001 en invefacon.factupos.com) que hace fetch a 127.0.0.1 es una petición a
+  // "red privada" y el navegador la BLOQUEA salvo que la respuesta al preflight traiga
+  // este header. Sin él, la web muestra "Failed to fetch" aunque el puente esté corriendo.
+  app.use((req, res, next) => {
+    res.header('Access-Control-Allow-Private-Network', 'true');
+    next();
+  });
+
   app.use(cors({
     origin: corsOrigins.includes('*') ? true : corsOrigins,
     credentials: false,
+    allowedHeaders: ['Content-Type', 'x-api-key'],
   }));
 
   app.use((req, _res, next) => {
