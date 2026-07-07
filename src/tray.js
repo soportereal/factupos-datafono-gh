@@ -140,25 +140,22 @@ function iniciarTray({ logger, cfgMod, rutaConfigDir, rutaLogs, onSalir, onReini
     } catch (e) { logger.warn(`No se pudo actualizar tray: ${e.message}`); }
   }
 
-  // Aplica el estado corriendo/detenido: cambia el ICONO (verde/rojo) solo cuando
-  // el estado cambia, y siempre refresca la etiqueta.
+  let listo = false;        // el binario del tray envió 'ready'
+  let timerSondeo = null;
+
+  // Cambia el ICONO (verde/rojo) SOLO cuando el estado cambia. Si no cambió, NO
+  // escribe nada al tray. Escribirle en cada sondeo (o antes de 'ready') corrompía
+  // el stdin del binario del tray y lo hacía crashear (code=2, SyntaxError JSON.parse).
   function aplicarEstado(ok, detalle) {
+    if (ok === servicioActivo) return;                 // sin cambios → no tocar el tray
+    servicioActivo = ok;
     const texto = ok ? '● Servicio corriendo' : `● Servicio detenido${detalle ? ': ' + detalle : ''}`;
-    if (ok !== servicioActivo) {
-      servicioActivo = ok;
-      textoEstado = texto;
-      try {
-        tray.sendAction({
-          type: 'update-menu-and-item',
-          menu: construirMenu(ok ? ICON_ACTIVO : ICON_INACTIVO, texto),
-          item: itemEstado(texto),
-          seq_id: ITEMS.ESTADO,
-        });
-      } catch (e) { logger.warn(`No se pudo cambiar icono tray: ${e.message}`); }
-      logger.info(`Estado del servicio: ${ok ? 'CORRIENDO' : 'DETENIDO'}${detalle ? ' (' + detalle + ')' : ''}`);
-    } else {
-      actualizarEtiqueta(texto);
-    }
+    textoEstado = texto;
+    logger.info(`Estado del servicio: ${ok ? 'CORRIENDO' : 'DETENIDO'}${detalle ? ' (' + detalle + ')' : ''}`);
+    if (!listo) return;                                // aún no está listo; se pinta al primer sondeo post-ready
+    try {
+      tray.sendAction({ type: 'update-menu', menu: construirMenu(ok ? ICON_ACTIVO : ICON_INACTIVO, texto), seq_id: ITEMS.ESTADO });
+    } catch (e) { logger.warn(`No se pudo cambiar icono tray: ${e.message}`); }
   }
 
   // Sondeo periódico de /salud para reflejar en el icono si el servicio responde.
@@ -167,9 +164,16 @@ function iniciarTray({ logger, cfgMod, rutaConfigDir, rutaLogs, onSalir, onReini
     const r = await pingHTTP(`http://${c.servidor.host}:${c.servidor.port}/salud`);
     aplicarEstado(r.ok, r.ok ? '' : (r.error || 'sin respuesta'));
   }
-  const timerSondeo = setInterval(() => { sondear(); }, 5000);
-  if (timerSondeo.unref) timerSondeo.unref();
-  sondear();  // primer chequeo inmediato
+
+  // CLAVE: esperar el evento 'ready' del tray ANTES de mandarle cualquier acción.
+  // Mandarle un update antes de que esté listo lo hacía crashear a los segundos.
+  tray.onReady(() => {
+    listo = true;
+    servicioActivo = null;                             // forzar el primer pintado real del color
+    sondear();
+    timerSondeo = setInterval(() => { sondear(); }, 5000);
+    if (timerSondeo.unref) timerSondeo.unref();
+  });
 
   async function diagnosticar(url) {
     actualizarEtiqueta('● Diagnosticando…');
