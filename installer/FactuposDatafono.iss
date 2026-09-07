@@ -14,10 +14,17 @@
 ;  Nota técnica: NO se instala como "servicio de Windows" puro porque el bridge
 ;  muestra ícono en la bandeja (tray), y un servicio corre en sesión 0 sin UI.
 ;  El autostart al iniciar sesión cumple lo mismo y conserva el tray.
+;
+;  🪤 IMPORTANTE — el .exe es de CONSOLA (pkg no sabe generar otra cosa): si se
+;  abre directamente, Windows le pone una ventana negra, y cuando el usuario la
+;  cierra se cierra el puente y la caja deja de cobrar (reporte #1229). Por eso
+;  TODO lo que arranca el puente —autostart, menú Inicio, "iniciar ahora" y el
+;  acceso directo de la carpeta— pasa por wscript + el .vbs, nunca por el .exe.
+;  Si algún día se agrega otra forma de arrancarlo, tiene que ir por el .vbs.
 ; ============================================================================
 
 #define MyAppName "FactuposDatafono"
-#define MyAppVersion "0.4.5"
+#define MyAppVersion "0.4.5.1"
 #define MyAppPublisher "Soporte Real SRL"
 #define MyAppURL "https://soportereal.com"
 #define MyAppExeName "FactuposDatafono.exe"
@@ -51,7 +58,7 @@ Name: "es"; MessagesFile: "compiler:Languages\Spanish.isl"
 
 [Tasks]
 Name: "autostart"; Description: "Arrancar automáticamente al iniciar Windows (recomendado)"; GroupDescription: "Inicio automático:"
-Name: "startmenu"; Description: "Crear acceso directo en el menú Inicio"; GroupDescription: "Accesos directos:"; Flags: unchecked
+Name: "startmenu"; Description: "Crear acceso directo en el menú Inicio (recomendado)"; GroupDescription: "Accesos directos:"
 
 [Files]
 ; El .exe lo genera `npm run build:win` (pkg) ANTES de compilar este instalador.
@@ -62,6 +69,10 @@ Source: "{#MyAppIcon}"; DestDir: "{app}"; Flags: ignoreversion
 [Icons]
 ; Accesos directos en el menú Inicio (lanzan el .vbs → sin consola, con tray)
 Name: "{group}\{#MyAppName}"; Filename: "wscript.exe"; Parameters: """{app}\{#MyAppVbs}"""; WorkingDir: "{app}"; IconFilename: "{app}\{#MyAppIcon}"; Tasks: startmenu
+; Y uno DENTRO de la carpeta de instalación: quien entre a "Archivos de programa"
+; a abrirlo a mano encuentra este y no el .exe pelado. Abrir el .exe directamente
+; le pone una ventana de consola, y al cerrarla se cierra el puente (reporte #1229).
+Name: "{app}\Iniciar {#MyAppName}"; Filename: "wscript.exe"; Parameters: """{app}\{#MyAppVbs}"""; WorkingDir: "{app}"; IconFilename: "{app}\{#MyAppIcon}"
 Name: "{group}\Desinstalar {#MyAppName}"; Filename: "{uninstallexe}"; Tasks: startmenu
 
 [Registry]
