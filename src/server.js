@@ -271,4 +271,4 @@ function crearApp({ logger }) {
   return app;
 }
 
-module.exports = { crearApp };
+module.exports = { crearApp, bancosDisponibles: Object.keys(plugins) };

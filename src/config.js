@@ -21,7 +21,8 @@ const DEFAULTS = {
     transport: 'http',
     // Transporte 'http': base del puente httpRunSDK (SIN /SdkInvoke). El pinpad es USB,
     // así que NO se usa ip/port del datáfono; solo este puerto local.
-    httpUrl: 'http://localhost:0808/baccredomatic',
+    // ⚠️ 127.0.0.1, NO 'localhost' (Node lo resuelve a ::1 y el SDK es IPv4).
+    httpUrl: 'http://127.0.0.1:0808/baccredomatic',
     // Transporte 'spawn': ruta del CSP.EMV.InteropEXE.exe. Vacío = el plugin usa
     // BAC_INTEROP_EXE o su default. Override por transacción vía req.body.exePath.
     exePath: '',

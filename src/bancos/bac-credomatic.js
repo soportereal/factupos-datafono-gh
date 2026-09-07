@@ -53,7 +53,9 @@ const DEFAULT_TRANSPORT = 'http';
 
 // Puente HTTP oficial del SDK (BacCredomatic.httpRunSDK.exe). Base SIN /SdkInvoke.
 // Confirmado en librerias-proveedor/web-integracion/serviceprovider.js.
-const DEFAULT_HTTP_URL = process.env.BAC_HTTP_URL || 'http://localhost:0808/baccredomatic';
+// ⚠️ 127.0.0.1 y NO 'localhost': Node resuelve localhost a IPv6 (::1) y el SDK
+// escucha en IPv4 → 'connect ECONNREFUSED ::1:808' (visto en campo 2026-07-21).
+const DEFAULT_HTTP_URL = process.env.BAC_HTTP_URL || 'http://127.0.0.1:0808/baccredomatic';
 
 // Ruta del ejecutable del SDK BAC (Windows, solo transporte 'spawn'). Override por env o constructor.
 const DEFAULT_EXE_PATH = process.env.BAC_INTEROP_EXE
@@ -91,20 +93,114 @@ function aMontoDecimal(monto) {
 }
 
 /**
- * Arma el string de parámetros "clave:valor;clave:valor;".
- * Omite claves con valor null/undefined/''. SIN espacios.
+ * Arma el string de parámetros "clave:valor;clave:valor;". SIN espacios.
+ * Omite null/undefined, pero **conserva los strings vacíos**: el SDK espera las
+ * claves presentes aunque no tengan valor (`accountNumber:;expirationDate:;…`).
+ * Filtrarlas provocaba CE "Error en parametros para la transaccion = SALE"
+ * (request real de referencia, 2026-07-21).
  */
 function armarArgs(params) {
   return Object.entries(params)
-    .filter(([, v]) => v !== undefined && v !== null && v !== '')
+    .filter(([, v]) => v !== undefined && v !== null)
     .map(([k, v]) => `${k}:${v}`)
     .join(';');
 }
 
+/**
+ * Parsea el JSON del SDK BAC.
+ * ⚠️ `httpRunSDK.exe` devuelve el JSON **doblemente codificado**: el body es un
+ * string JSON que a su vez contiene el JSON de la respuesta (igual que el request,
+ * que va como JSON.stringify(argsString)). Un solo JSON.parse deja un string y
+ * normalizarRespuesta lo descartaba con rsp_code 99 "no interpretable".
+ * Verificado contra el SDK real 3.12.3 (2026-07-21).
+ */
+/**
+ * ⚠️ BUG DEL SDK BAC: en las transacciones APROBADAS el campo `voucher` trae
+ * saltos de línea LITERALES dentro del string JSON, lo cual es JSON inválido
+ * (la spec exige \n escapado) y hace fallar JSON.parse. Solo pasa en aprobadas,
+ * porque son las únicas que traen voucher. Se escapan los controles que caen
+ * dentro de comillas. (Detectado con el primer cobro real, 2026-07-21.)
+ */
+function sanearJsonMultilinea(txt) {
+  let out = '';
+  let dentroDeString = false;
+  let escapado = false;
+  for (let i = 0; i < txt.length; i++) {
+    const ch = txt[i];
+    if (escapado) { out += ch; escapado = false; continue; }
+    if (ch === '\\') { out += ch; escapado = true; continue; }
+    if (ch === '"') { dentroDeString = !dentroDeString; out += ch; continue; }
+    if (dentroDeString) {
+      if (ch === '\n') { out += '\\n'; continue; }
+      if (ch === '\r') { out += '\\r'; continue; }
+      if (ch === '\t') { out += '\\t'; continue; }
+    }
+    out += ch;
+  }
+  return out;
+}
+
 function tryParseJson(text) {
-  const trimmed = (text || '').trim();
-  if (!trimmed) return undefined;
-  try { return JSON.parse(trimmed); } catch (_) { return undefined; }
+  let val = (text || '').trim();
+  if (!val) return undefined;
+  // Hasta 3 desenvolvidas: el body puede venir con 1 o 2 niveles de encoding.
+  for (let i = 0; i < 3; i++) {
+    if (typeof val !== 'string') break;
+    const txt = val.trim();
+    try { val = JSON.parse(txt); continue; } catch (_) { /* probar saneado */ }
+    try { val = JSON.parse(sanearJsonMultilinea(txt)); } catch (_) { break; }
+  }
+  if (val && typeof val === 'object') return val;
+  // Fallback 1: el JSON viene embebido en otro texto (log, prefijo, BOM).
+  const m = String(val).match(/\{[\s\S]*\}/);
+  if (m) { try { return JSON.parse(m[0]); } catch (_) { /* sigue */ } }
+  // Fallback 2: respuesta XML (EMVStreamResponse, formato nativo del SDK).
+  const xml = parsearEMVStreamXml(String(val));
+  if (xml) return xml;
+  return undefined;
+}
+
+/**
+ * Parsea el XML `EMVStreamResponse` del SDK a un objeto plano equivalente al JSON.
+ * El manual documenta esta forma para el SDK directo; se soporta por si el
+ * httpRunSDK la devuelve en algún tipo de transacción.
+ */
+function parsearEMVStreamXml(texto) {
+  if (!texto || texto.indexOf('<') === -1) return undefined;
+  if (!/EMVStreamResponse|responseCode/i.test(texto)) return undefined;
+  const out = {};
+  // Solo tags HOJA (el valor no puede contener '<'), así el bloque contenedor
+  // <EMVStreamResponse>…</EMVStreamResponse> no se traga todo el contenido.
+  const re = /<([a-zA-Z0-9_]+)>([^<]*)<\/\1>/g;
+  let m;
+  while ((m = re.exec(texto)) !== null) {
+    if (m[1] === 'string') continue;   // los <string> son de printTags
+    out[m[1]] = m[2];
+  }
+  // printTags: <printTags><string>..</string>..</printTags>
+  const tagsBloque = texto.match(/<printTags>([\s\S]*?)<\/printTags>/);
+  if (tagsBloque) {
+    const tags = [];
+    const reTag = /<string>([\s\S]*?)<\/string>/g;
+    let t;
+    while ((t = reTag.exec(tagsBloque[1])) !== null) tags.push(t[1]);
+    if (tags.length) out.printTags = tags;
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+/**
+ * Invoice único por intento (obligatorio en SALE; el manual DUAL exige que
+ * cambie en cada reintento, por eso NO se usa el número de la factura de Caja).
+ * 6 dígitos = segundos del día * 10 + secuencia → único por segundo, reinicia
+ * cada día (el lote de BAC cierra a diario).
+ */
+let _invoiceSeq = 0;
+function generarInvoice() {
+  const ahora = new Date();
+  const segDia = ahora.getHours() * 3600 + ahora.getMinutes() * 60 + ahora.getSeconds();
+  _invoiceSeq = (_invoiceSeq + 1) % 10;
+  return String(segDia * 10 + _invoiceSeq).padStart(6, '0');
 }
 
 /**
@@ -225,7 +321,16 @@ function ejecutarHttp({ httpUrl, argsString, timeoutMs = DEFAULT_TIMEOUT_MS, log
         }
         const json = tryParseJson(texto);
         if (json === undefined) {
-          return reject(new BacError('El puente BAC no devolvió JSON válido', 'NO_JSON', texto));
+          // ⚠️ NO rechazar: si el cobro se aprobó y solo falla el parseo, rechazar
+          // haría perder la transacción. Se devuelve el texto CRUDO para que el
+          // cajero/soporte pueda verlo y conciliar con el voucher del pinpad.
+          log(`[bac] ⚠ respuesta no interpretable, se devuelve cruda: ${texto}`);
+          return resolve({
+            rsp_code: '99',
+            rsp_msg: 'Respuesta del SDK BAC no interpretable — verificar el voucher del pinpad antes de reintentar',
+            raw_text: texto,
+            _sin_parsear: true,
+          });
         }
         resolve(normalizarRespuesta(json));
       });
@@ -331,7 +436,12 @@ class WpossClient {
    * configurado (http/spawn) y normaliza.
    */
   ejecutar(params) {
-    const argsString = armarArgs({ terminalId: this.terminalId, ...params });
+    // Orden calcado del request real: transactionType, terminalId, y luego el resto.
+    const argsString = armarArgs({
+      transactionType: params.transactionType,
+      terminalId: this.terminalId,
+      ...params,
+    });
     const comun = { argsString, timeoutMs: this.timeoutMs, logger: this.logger };
     const promesa = this.transport === 'spawn'
       ? ejecutarSpawn({ exePath: this.exePath, ...comun })
@@ -376,12 +486,28 @@ class WpossClient {
     const base = Number(baseAmount) || 0;
     const tax = Number(taxAmount) || 0;
     const tip = Number(tipAmount) || 0;
+    // Se calca el request real del SDK, incluidas las claves vacías y el orden:
+    // transactionType;terminalId;invoice;accountNumber:;…;totalAmount;taxAmount;
+    // tipAmount;keepCardDevice:OFF;needJsonRequest:FALSE;getEncryptedTrack2:FALSE
     return this.ejecutar({
       transactionType: TX.SALE,
-      invoice,                                   // ⚠️ debe ser único por intento
+      // ⚠️ invoice OBLIGATORIO y único por intento. Si la web no lo manda se genera
+      // acá: sin él el SDK responde CE (comprobado con el SDK real 3.12.3).
+      invoice: invoice || generarInvoice(),
+      // Claves de tarjeta manual/e-commerce: van presentes pero vacías.
+      accountNumber: '',
+      expirationDate: '',
+      avsEntry: '',
+      address: '',
+      postalCode: '',
+      otpCode: '',
+      otpPinCode: '',
       totalAmount: aMontoDecimal(base + tax + tip),
-      taxAmount: aMontoDecimal(taxAmount),       // ✅ taxAmount (NO txAmount) — manual DUAL
-      tipAmount: aMontoDecimal(tipAmount),
+      taxAmount: aMontoDecimal(tax),             // ✅ taxAmount (NO txAmount) — manual DUAL
+      tipAmount: aMontoDecimal(tip),
+      keepCardDevice: 'OFF',
+      needJsonRequest: 'FALSE',
+      getEncryptedTrack2: 'FALSE',
     });
   }
 

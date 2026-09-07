@@ -54,7 +54,7 @@ async function main() {
   logger.info(`Build: ${new Date().toISOString()} (al iniciar)`);
   logger.info(`Config: ${cfgMod.rutaConfig()}`);
   logger.info(`POS:    ${cfg.pos.ip}:${cfg.pos.port} (merchantId=${cfg.pos.merchantId || 'NO CONFIGURADO'})`);
-  logger.info(`Bancos: banco-promerica (WPOSS protocolo AES + SHA256 + length prefix)`);
+  logger.info(`Bancos: ${require('./server').bancosDisponibles.join(', ')}`);
   logger.info('====================================');
 
   // CANDADO DE INSTANCIA ÚNICA: si el puerto ya está en uso, ya hay otra instancia
