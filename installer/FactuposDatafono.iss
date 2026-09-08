@@ -24,7 +24,7 @@
 ; ============================================================================
 
 #define MyAppName "FactuposDatafono"
-#define MyAppVersion "0.4.5.1"
+#define MyAppVersion "0.4.6"
 #define MyAppPublisher "Soporte Real SRL"
 #define MyAppURL "https://soportereal.com"
 #define MyAppExeName "FactuposDatafono.exe"

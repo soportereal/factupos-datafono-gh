@@ -57,6 +57,30 @@ const DEFAULT_TRANSPORT = 'http';
 // escucha en IPv4 → 'connect ECONNREFUSED ::1:808' (visto en campo 2026-07-21).
 const DEFAULT_HTTP_URL = process.env.BAC_HTTP_URL || 'http://127.0.0.1:0808/baccredomatic';
 
+/**
+ * Fuerza el host local a IPv4. Cambiar el DEFAULT no alcanzaba: config.cargar()
+ * ESCRIBE el config.json con los defaults de su version, y despues el archivo
+ * PISA a los defaults nuevos. Una caja instalada con <= 0.4.3 quedo con
+ * "httpUrl": "http://localhost:0808/..." grabado en %APPDATA%, y seguia dando
+ * 'connect ECONNREFUSED ::1:808' aun despues de actualizar el .exe a 0.4.5
+ * (visto en campo 2026-09-08, reporte #1229). Lo mismo si alguien escribe
+ * 'localhost' a mano en el campo del modulo DTF-001, que llega por req.body.
+ * El SDK de BAC escucha solo en IPv4, asi que aca no se pierde nada.
+ */
+function forzarIPv4Local(url) {
+  if (!url) return url;
+  try {
+    const u = new URL(String(url));
+    if (u.hostname === 'localhost' || u.hostname === '::1' || u.hostname === '[::1]') {
+      u.hostname = '127.0.0.1';
+      return u.toString().replace(/\/+$/, '');
+    }
+    return url;
+  } catch (_) {
+    return url; // URL invalida: que falle mas adelante con su propio mensaje
+  }
+}
+
 // Ruta del ejecutable del SDK BAC (Windows, solo transporte 'spawn'). Override por env o constructor.
 const DEFAULT_EXE_PATH = process.env.BAC_INTEROP_EXE
   || 'C:\\CSP\\CSP SDK Integracion EMV 3.12.3 v1\\CSP.EMV.InteropEXE.exe';
@@ -415,7 +439,8 @@ class WpossClient {
    * @param {object} opts
    * @param {string} [opts.merchantId] - transporta el terminalId de BAC.
    * @param {string} [opts.transport]  - 'http' (default) | 'spawn'.
-   * @param {string} [opts.httpUrl]    - base del puente httpRunSDK (default localhost:0808). Solo 'http'.
+   * @param {string} [opts.httpUrl]    - base del puente httpRunSDK (default 127.0.0.1:0808). Solo 'http'.
+   *                                 'localhost' se fuerza a 127.0.0.1 (ver forzarIPv4Local).
    * @param {string} [opts.exePath]    - ruta del CSP.EMV.InteropEXE.exe. Solo 'spawn'.
    * @param {number} [opts.timeoutMs]
    * @param {function} [opts.logger]
@@ -425,7 +450,7 @@ class WpossClient {
     if (!merchantId) throw new Error('WpossClient (BAC): merchantId (terminalId) requerido');
     this.terminalId = String(merchantId);
     this.transport = transport === 'spawn' ? 'spawn' : DEFAULT_TRANSPORT;
-    this.httpUrl = httpUrl || DEFAULT_HTTP_URL;
+    this.httpUrl = forzarIPv4Local(httpUrl || DEFAULT_HTTP_URL);
     this.exePath = exePath || DEFAULT_EXE_PATH;
     this.timeoutMs = timeoutMs || DEFAULT_TIMEOUT_MS;
     this.logger = logger;

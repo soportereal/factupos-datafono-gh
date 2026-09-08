@@ -83,9 +83,36 @@ function cargar() {
   }
   try {
     const raw = JSON.parse(fs.readFileSync(ruta, 'utf8'));
-    return fusionar(DEFAULTS, raw);
+    const cfg = fusionar(DEFAULTS, raw);
+    if (migrarHttpUrlLocalhost(cfg)) {
+      // El archivo del usuario GANA sobre los DEFAULTS, así que cambiar el default
+      // no curaba a las cajas ya instaladas: las que nacieron con <= 0.4.3 tienen
+      // "httpUrl": "http://localhost:0808/..." escrito acá y seguían dando
+      // 'ECONNREFUSED ::1:808' después de actualizar (reporte #1229). Se corrige
+      // el archivo una sola vez, para que lo guardado deje de ser una trampa.
+      try { fs.writeFileSync(ruta, JSON.stringify(cfg, null, 2), 'utf8'); } catch (_) { /* solo lectura: igual sirve en memoria */ }
+    }
+    return cfg;
   } catch (err) {
     throw new Error(`Config inválida en ${ruta}: ${err.message}`);
+  }
+}
+
+/**
+ * Reescribe bac.httpUrl de 'localhost'/'::1' a 127.0.0.1. Devuelve true si tocó algo.
+ * El SDK de BAC escucha solo en IPv4; Node resuelve localhost a ::1 primero.
+ */
+function migrarHttpUrlLocalhost(cfg) {
+  const actual = cfg && cfg.bac && cfg.bac.httpUrl;
+  if (!actual) return false;
+  try {
+    const u = new URL(String(actual));
+    if (u.hostname !== 'localhost' && u.hostname !== '::1' && u.hostname !== '[::1]') return false;
+    u.hostname = '127.0.0.1';
+    cfg.bac.httpUrl = u.toString().replace(/\/+$/, '');
+    return true;
+  } catch (_) {
+    return false;
   }
 }
 
@@ -97,4 +124,4 @@ function guardar(parcial) {
   return nuevo;
 }
 
-module.exports = { cargar, guardar, rutaConfig, rutaConfigDir, rutaLogs, DEFAULTS };
+module.exports = { cargar, guardar, rutaConfig, rutaConfigDir, rutaLogs, DEFAULTS, migrarHttpUrlLocalhost };
